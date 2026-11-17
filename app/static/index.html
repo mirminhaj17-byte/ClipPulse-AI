@@ -31,9 +31,9 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <section class="card"><h3>My clipping history</h3><div id="history" class="status">Loading your clips…</div></section>
 <section class="card">
 <h3>✨ Find my best moments</h3>
-<p class="muted">ClipPulse scans the audio for active speech and ranks promising moments. This first version uses a lightweight activity score, not a trained virality model.</p>
+<p class="muted">ClipPulse analyses audio activity and visual scene changes to suggest candidate moments. Scores are transparent heuristics, not a trained virality prediction.</p>
 <label>Suggested clip length</label>
-<select id="autoLength"><option value="20">20 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select>
+<select id="autoLength"><option value="20">20 seconds</option><option value="20" selected>20 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select>
 <button id="findHighlights" onclick="findHighlights()">Find best moments automatically</button>
 <div id="highlightStatus" class="status">Upload a video first to discover candidate highlights.</div>
 <div id="highlightResults"></div>
@@ -67,12 +67,12 @@ async function upload(){const f=document.getElementById("file").files[0];if(!f)r
 async function findHighlights(){
  if(!videoId){alert("Upload a video first.");return}
  const btn=document.getElementById("findHighlights"),status=document.getElementById("highlightStatus"),results=document.getElementById("highlightResults");
- btn.disabled=true;btn.textContent="Analysing audio…";status.textContent="Scanning audio activity. Large videos may take a few minutes on the free server.";results.innerHTML="";
+ btn.disabled=true;btn.textContent="Analysing video…";status.textContent="Scanning audio activity and visual scene changes. Large videos may take a few minutes on the free server.";results.innerHTML="";
  try{
   const seconds=Number(document.getElementById("autoLength").value);
   const d=await api("/api/auto-highlights?video_id="+encodeURIComponent(videoId)+"&clip_seconds="+seconds,{method:"POST"});
   suggestions=d.items||[];
-  status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Higher scores indicate stronger speech activity, not guaranteed virality.";
+  status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Scores combine audio activity and detected visual changes; review clips before publishing.";
   if(!suggestions.length){results.innerHTML='<p class="muted">No clear speech-heavy moments found. You can still create a manual clip below.</p>';return}
   results.innerHTML=suggestions.map((x,i)=>'<div class="history-item"><div><strong>Candidate '+(i+1)+' · '+x.score+'/100</strong><div class="muted">'+formatTime(x.start)+' · '+Math.round(x.duration)+' sec · '+escapeHtml(x.reason)+'</div></div><button style="width:auto;margin:0" onclick="createSuggestedClip('+i+')">Make clip</button></div>').join("");
  }catch(e){status.textContent=e.message}
