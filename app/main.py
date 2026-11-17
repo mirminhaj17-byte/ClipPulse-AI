@@ -7,6 +7,7 @@ from fastapi.responses import FileResponse, RedirectResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.sessions import SessionMiddleware
 from pydantic import BaseModel
+from app.highlights import detect_highlights
 
 BASE = Path(os.getenv("CLIPPULSE_DATA", "./data")).resolve()
 UPLOADS, OUTPUTS, LIVE = BASE / "uploads", BASE / "clips", BASE / "live"
@@ -174,6 +175,39 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
         conn.execute("INSERT INTO uploads(video_id,user_id,source_name) VALUES(?,?,?)",
                      (name, str(user["id"]), file.filename or name))
     return {"video_id": name, "filename": file.filename, "size": size}
+
+@app.post("/api/auto-highlights")
+def auto_highlights(request: Request, video_id: str, clip_seconds: int = 30):
+    user = current_user(request)
+    if Path(video_id).name != video_id:
+        raise HTTPException(400, "Invalid video ID.")
+    with db() as conn:
+        upload = conn.execute(
+            "SELECT source_name FROM uploads WHERE video_id=? AND user_id=?",
+            (video_id, str(user["id"]))
+        ).fetchone()
+    if not upload:
+        raise HTTPException(404, "Uploaded video not found in your account.")
+    src = UPLOADS / video_id
+    if not src.exists():
+        raise HTTPException(404, "Upload has expired from temporary free storage. Please upload it again.")
+    if not 12 <= clip_seconds <= 60:
+        raise HTTPException(400, "Choose a clip length between 12 and 60 seconds.")
+    if not clip_semaphore.acquire(blocking=False):
+        raise HTTPException(429, "Another video analysis or clip is running. Please wait and try again.")
+    try:
+        try:
+            result = detect_highlights(src, clip_seconds=clip_seconds, limit=6)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        except subprocess.TimeoutExpired:
+            raise HTTPException(408, "Analysis took too long on the free server. Try a shorter or smaller video.")
+        except RuntimeError as exc:
+            raise HTTPException(422, str(exc))
+        return {"source_name": upload["source_name"], **result}
+    finally:
+        clip_semaphore.release()
+
 
 class ClipRequest(BaseModel):
     video_id: str
