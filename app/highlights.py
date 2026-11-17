@@ -48,10 +48,10 @@ def _audio_activity(path: Path, duration: float):
         raise RuntimeError("Audio analysis failed. Try an MP4 with a supported audio track.")
     silences, pending = [], None
     for line in (p.stderr or "").splitlines():
-        m = re.search(r"silence_start:\\s*([0-9.]+)", line)
+        m = re.search(r"silence_start:\s*([0-9.]+)", line)
         if m:
             pending = float(m.group(1))
-        m = re.search(r"silence_end:\\s*([0-9.]+)", line)
+        m = re.search(r"silence_end:\s*([0-9.]+)", line)
         if m and pending is not None:
             silences.append((max(0.0, pending), min(duration, float(m.group(1)))))
             pending = None
