@@ -22,8 +22,7 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 </style></head><body>
 <header><div class="logo">CP</div><div style="flex:1"><h1>ClipPulse AI</h1><small>Live + recorded video clipping</small></div><button id="logout" class="secondary" style="width:auto;margin:0" hidden onclick="logout()">Sign out</button></header>
 <main id="loginGate">
-<section class="hero"><div class="tag">YOUR CREATOR WORKSPACE</div><h2>Welcome to ClipPulse AI.</h2><p>Sign in with GitHub to access your personal clipping workspace and saved clip history.</p></section>
-<section class="card" style="max-width:520px;margin:22px auto"><h3>Sign in to continue</h3><p class="muted">Your clips and history are separated by your GitHub account.</p><a class="btn" href="/auth/github" style="background:#fff;color:#111">Continue with GitHub</a><div id="loginMessage" class="status"></div></section>
+<section class="hero"><div class="tag">NO SIGN-IN REQUIRED</div><h2>Welcome to ClipPulse AI.</h2><p>Start clipping right away. Your browser gets its own guest workspace without GitHub setup.</p></section>
 </main>
 <main id="workspace" hidden>
 <div class="profile"><img id="avatar" class="avatar" alt=""><div><strong id="displayName"></strong><div class="muted" id="handle"></div></div></div>
@@ -59,8 +58,8 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <script>
 let videoId=null,liveId=null,suggestions=[];
 async function api(path,opts={}){const r=await fetch(path,opts);const d=await r.json().catch(()=>({detail:"Unexpected server response"}));if(!r.ok)throw Error(d.detail||"Request failed");return d}
-async function checkAuth(){try{const d=await api("/api/me");if(d.authenticated){document.getElementById("loginGate").hidden=true;document.getElementById("workspace").hidden=false;document.getElementById("logout").hidden=false;document.getElementById("displayName").textContent=d.user.name;document.getElementById("handle").textContent="@"+d.user.login;document.getElementById("avatar").src=d.user.avatar_url;loadHistory()}else{document.getElementById("loginGate").hidden=false;document.getElementById("workspace").hidden=true}}catch(e){document.getElementById("loginMessage").textContent=e.message}}
-async function logout(){await api("/auth/logout",{method:"POST"});location.reload()}
+async function checkAuth(){try{const d=await api("/api/me");document.getElementById("loginGate").hidden=true;document.getElementById("workspace").hidden=false;document.getElementById("logout").hidden=true;document.getElementById("displayName").textContent=d.user.name||"Guest creator";document.getElementById("handle").textContent="No account needed · this browser session";document.getElementById("avatar").hidden=true;loadHistory()}catch(e){document.getElementById("loginGate").hidden=false;document.getElementById("workspace").hidden=true;document.getElementById("loginMessage").textContent=e.message}}
+async function logout(){location.reload()}
 async function loadHistory(){const box=document.getElementById("history");try{const d=await api("/api/history");if(!d.items.length){box.textContent="No clips yet. Your completed clips will appear here.";return}box.innerHTML=d.items.map(x=>'<div class="history-item"><div><strong>'+escapeHtml(x.source_name)+'</strong><div class="muted">'+escapeHtml(x.kind)+' · '+escapeHtml(x.created_at)+'</div></div><a href="'+x.url+'">Download</a></div>').join("")}catch(e){box.textContent=e.message}}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function upload(){const f=document.getElementById("file").files[0];if(!f)return alert("Choose a video first.");const fd=new FormData();fd.append("file",f);const s=document.getElementById("uploadStatus");s.textContent="Uploading…";try{const d=await api("/api/upload",{method:"POST",body:fd});videoId=d.video_id;s.textContent="Uploaded: "+d.filename+" ("+(d.size/1048576).toFixed(1)+" MB)"}catch(e){s.textContent=e.message}}
