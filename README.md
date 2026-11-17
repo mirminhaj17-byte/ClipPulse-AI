@@ -17,19 +17,13 @@ The first-pass ranker is a transparent speech/activity heuristic, not a trained 
 - Start a Streamlink capture for a public YouTube/Twitch URL.
 - Mobile-friendly browser UI.
 
-## GitHub login setup (required before sign-in works)
-1. In GitHub, open **Settings → Developer settings → OAuth Apps → New OAuth App**.
-2. Set **Application name** to `ClipPulse AI`.
-3. Set **Homepage URL** to `https://clippulse-ai.onrender.com`.
-4. Set **Authorization callback URL** to `https://clippulse-ai.onrender.com/auth/github/callback`.
-5. Register the app and copy its Client ID. Generate a Client Secret.
-6. In Render, open the **ClipPulse-AI** web service → **Environment** and add:
-   - `GITHUB_CLIENT_ID` = the OAuth app Client ID
-   - `GITHUB_CLIENT_SECRET` = the OAuth app Client Secret
-   - `SESSION_SECRET` = a long random secret (at least 32 random characters)
-7. Save changes and let Render redeploy.
+## Guest mode (default)
+- No GitHub OAuth app or manual credentials are needed.
+- Each browser receives a signed guest session and sees only its own clip history.
+- Guest sessions are temporary and may reset after a service restart or redeploy.
+- This starter is intended for personal testing. A public production service should add rate limits, abuse protection and durable storage before inviting unrestricted public use.
 
-Do not put the Client Secret or SESSION_SECRET in GitHub files, screenshots, or chat messages. Add them only to Render's private environment settings. The app requests only the `read:user` GitHub scope and does not need repository access.
+GitHub OAuth routes remain in the backend for a possible future account-based mode, but the default browser interface does not require them.
 
 ## Run locally
 Requires Python 3.11+, FFmpeg and Streamlink.
