@@ -16,6 +16,9 @@ app = FastAPI(title="ClipPulse AI", version="0.1.0")
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
 live_jobs = {}
 lock = threading.Lock()
+# Serialize FFmpeg jobs to protect the 512 MB Render Free instance.
+clip_semaphore = threading.Semaphore(1)
+MAX_UPLOAD_BYTES = 550 * 1024 * 1024
 
 def run_ffmpeg(args):
     proc = subprocess.run(["ffmpeg", "-y", "-hide_banner", "-loglevel", "error", *args],
@@ -52,9 +55,9 @@ async def upload_video(file: UploadFile = File(...)):
     with dest.open("wb") as out:
         while chunk := await file.read(1024 * 1024):
             size += len(chunk)
-            if size > 2 * 1024**3:
+            if size > MAX_UPLOAD_BYTES:
                 dest.unlink(missing_ok=True)
-                raise HTTPException(413, "Maximum upload size is 2 GB.")
+                raise HTTPException(413, "Maximum upload size is 550 MB on the free instance.")
             out.write(chunk)
     return {"video_id": name, "filename": file.filename, "size": size}
 
@@ -82,12 +85,24 @@ def create_clip(req: ClipRequest):
         vf = "scale=1080:1080:force_original_aspect_ratio=increase,crop=1080:1080"
     else:
         vf = "scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080"
+    if not clip_semaphore.acquire(blocking=False):
+        raise HTTPException(429, "Another clip is being processed. Please wait and try again.")
     try:
-        run_ffmpeg(["-ss", str(req.start), "-i", str(src), "-t", str(req.duration),
-                    "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
-                    "-crf", "23", "-c:a", "aac", "-movflags", "+faststart", str(out)])
+        if req.aspect == "9:16":
+            vf = "scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280"
+        elif req.aspect == "1:1":
+            vf = "scale=720:720:force_original_aspect_ratio=increase,crop=720:720"
+        else:
+            vf = "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720"
+        run_ffmpeg(["-threads", "1", "-filter_threads", "1", "-ss", str(req.start), "-i", str(src),
+                    "-t", str(req.duration), "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast",
+                    "-threads", "1", "-crf", "28", "-c:a", "aac", "-b:a", "96k",
+                    "-movflags", "+faststart", str(out)])
     except RuntimeError as e:
+        out.unlink(missing_ok=True)
         raise HTTPException(500, f"Clip creation failed: {e}")
+    finally:
+        clip_semaphore.release()
     return {"clip_id": outname, "url": f"/api/download/{outname}"}
 
 class LiveRequest(BaseModel):
@@ -129,12 +144,21 @@ def clip_live(req: LiveClipRequest):
     # Approximate offset from current live edge; input is a growing MPEG-TS file.
     elapsed = time.time() - job["started"]
     start = max(0, elapsed - req.seconds_ago)
+    if not clip_semaphore.acquire(blocking=False):
+        raise HTTPException(429, "Another clip is being processed. Please wait and try again.")
     try:
-        run_ffmpeg(["-ss", str(start), "-i", str(job["path"]), "-t", str(req.duration),
-                    "-vf", vf, "-c:v", "libx264", "-preset", "veryfast",
-                    "-c:a", "aac", "-movflags", "+faststart", str(out)])
+        vf = {"9:16":"scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
+              "16:9":"scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+              "1:1":"scale=720:720:force_original_aspect_ratio=increase,crop=720:720"}[req.aspect]
+        run_ffmpeg(["-threads", "1", "-filter_threads", "1", "-ss", str(start), "-i", str(job["path"]),
+                    "-t", str(req.duration), "-vf", vf, "-c:v", "libx264", "-preset", "ultrafast",
+                    "-threads", "1", "-crf", "28", "-c:a", "aac", "-b:a", "96k",
+                    "-movflags", "+faststart", str(out)])
     except RuntimeError as e:
+        out.unlink(missing_ok=True)
         raise HTTPException(500, f"Live clip failed. The stream may not have buffered enough: {e}")
+    finally:
+        clip_semaphore.release()
     return {"clip_id": outname, "url": f"/api/download/{outname}"}
 
 @app.post("/api/live/stop/{live_id}")
