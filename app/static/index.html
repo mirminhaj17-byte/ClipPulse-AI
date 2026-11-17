@@ -1,34 +1,38 @@
 <!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ClipPulse AI</title>
 <style>
 :root{color-scheme:dark;--bg:#0b0d12;--panel:#151922;--line:#293140;--muted:#9aa5b5;--orange:#ff8a00}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:#f5f7fb;font:15px system-ui,-apple-system,Segoe UI,sans-serif}
-header{padding:25px max(20px,calc((100% - 1050px)/2));border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+header{padding:20px max(20px,calc((100% - 1050px)/2));border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
 .logo{background:var(--orange);color:#111;font-weight:900;border-radius:10px;padding:8px 10px}h1{font-size:21px;margin:0}header small{color:var(--muted)}
 main{max-width:1050px;margin:28px auto;padding:0 18px}.hero{padding:26px;border:1px solid var(--line);border-radius:18px;background:linear-gradient(135deg,#191f2b,#10141c)}
 .hero h2{font-size:30px;margin:0 0 8px}.hero p{color:var(--muted);margin:0;line-height:1.5}
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:16px;margin-top:18px}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:20px;margin-top:18px}
 h3{margin:0 0 15px;font-size:18px}.tag{color:var(--orange);font-size:12px;font-weight:700;letter-spacing:.08em}
 label{display:block;color:var(--muted);font-size:13px;margin:13px 0 6px}
 input,select{width:100%;padding:12px;border:1px solid var(--line);background:#0d1118;color:white;border-radius:9px;font-size:15px}
-button{background:var(--orange);border:0;color:#141414;font-weight:800;padding:12px 16px;border-radius:9px;margin-top:14px;width:100%;font-size:15px;cursor:pointer}
+button,.btn{background:var(--orange);border:0;color:#141414;font-weight:800;padding:12px 16px;border-radius:9px;margin-top:14px;width:100%;font-size:15px;cursor:pointer;text-align:center;text-decoration:none;display:block}
 button.secondary{background:#293140;color:white}.status{white-space:pre-wrap;color:#c6d0de;margin-top:12px;font-size:13px;line-height:1.5}
 a{color:#ffb454}.note{color:var(--muted);font-size:12px;line-height:1.5;margin-top:12px}
 footer{color:#657184;text-align:center;padding:30px;font-size:12px}
-</style></head>
-<body>
-<header><div class="logo">CP</div><div><h1>ClipPulse AI</h1><small>Live + recorded video clipping</small></div></header>
-<main>
-<section class="hero"><div class="tag">CREATOR WORKSPACE · V1.0</div><h2>Turn long videos into short clips.</h2><p>Upload a recording or connect a public YouTube/Twitch livestream. Choose a moment, format it vertically, and export an MP4.</p></section>
+.profile{display:flex;align-items:center;gap:12px;margin:18px 0}.avatar{width:42px;height:42px;border-radius:50%}.history-item{padding:13px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:center}.history-item:last-child{border:0}.muted{color:var(--muted);font-size:12px}
+[hidden]{display:none!important}
+</style></head><body>
+<header><div class="logo">CP</div><div style="flex:1"><h1>ClipPulse AI</h1><small>Live + recorded video clipping</small></div><button id="logout" class="secondary" style="width:auto;margin:0" hidden onclick="logout()">Sign out</button></header>
+<main id="loginGate">
+<section class="hero"><div class="tag">YOUR CREATOR WORKSPACE</div><h2>Welcome to ClipPulse AI.</h2><p>Sign in with GitHub to access your personal clipping workspace and saved clip history.</p></section>
+<section class="card" style="max-width:520px;margin:22px auto"><h3>Sign in to continue</h3><p class="muted">Your clips and history are separated by your GitHub account.</p><a class="btn" href="/auth/github" style="background:#fff;color:#111">Continue with GitHub</a><div id="loginMessage" class="status"></div></section>
+</main>
+<main id="workspace" hidden>
+<div class="profile"><img id="avatar" class="avatar" alt=""><div><strong id="displayName"></strong><div class="muted" id="handle"></div></div></div>
+<section class="hero"><div class="tag">CREATOR WORKSPACE · V1.1</div><h2>Turn long videos into short clips.</h2><p>Upload a recording or connect a public YouTube/Twitch livestream. Choose a moment, format it vertically, and export an MP4.</p></section>
+<section class="card"><h3>My clipping history</h3><div id="history" class="status">Loading your clips…</div></section>
 <div class="grid">
 <section class="card"><h3>① Recorded video</h3>
 <label>Choose a video file</label><input id="file" type="file" accept="video/*">
-<button onclick="upload()">Upload video</button>
-<div class="status" id="uploadStatus">No video selected yet.</div>
+<button onclick="upload()">Upload video</button><div class="status" id="uploadStatus">No video selected yet.</div>
 <label>Start time (seconds)</label><input id="start" type="number" min="0" value="0">
 <label>Clip length (seconds, max 180)</label><input id="duration" type="number" min="1" max="180" value="30">
 <label>Output format</label><select id="aspect"><option>9:16</option><option>16:9</option><option>1:1</option></select>
@@ -39,18 +43,21 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <button onclick="startLive()">Start live capture</button><div class="status" id="liveStatus">No live capture running.</div>
 <label>Clip length (seconds)</label><input id="liveDuration" type="number" min="1" max="120" value="30">
 <label>How many seconds back should the clip end?</label><input id="ago" type="number" min="1" max="3600" value="40">
-<button onclick="makeLiveClip()">Clip recent live moment</button>
-<button class="secondary" onclick="stopLive()">Stop live capture</button>
-<div class="note">Live capture requires Streamlink and a server that remains online. Use streams you own or are authorized to record. A short buffer may be needed before the first clip.</div>
-</section>
-</div>
-</main><footer>ClipPulse AI · Free/open-source starter · Processing runs on your server</footer>
+<button onclick="makeLiveClip()">Clip recent live moment</button><button class="secondary" onclick="stopLive()">Stop live capture</button>
+<div class="note">Live capture requires a continuously running server. Use streams you own or are authorized to record.</div>
+</section></div></main>
+<footer>ClipPulse AI · Free/open-source starter · Processing runs on your server</footer>
 <script>
 let videoId=null,liveId=null;
 async function api(path,opts={}){const r=await fetch(path,opts);const d=await r.json().catch(()=>({detail:"Unexpected server response"}));if(!r.ok)throw Error(d.detail||"Request failed");return d}
-async function upload(){const f=document.getElementById('file').files[0];if(!f)return alert('Choose a video first.');const fd=new FormData();fd.append('file',f);const s=document.getElementById('uploadStatus');s.textContent='Uploading…';try{const d=await api('/api/upload',{method:'POST',body:fd});videoId=d.video_id;s.textContent=`Uploaded: ${d.filename} (${(d.size/1048576).toFixed(1)} MB)`}catch(e){s.textContent=e.message}}
-async function makeClip(){if(!videoId)return alert('Upload a video first.');const s=document.getElementById('clipStatus');s.textContent='Creating clip…';try{const d=await api('/api/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({video_id:videoId,start:+start.value,duration:+duration.value,aspect:aspect.value})});s.innerHTML=`Ready: <a href="${d.url}">Download your clip</a>`}catch(e){s.textContent=e.message}}
-async function startLive(){const s=document.getElementById('liveStatus');s.textContent='Connecting…';try{const d=await api('/api/live/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url:liveUrl.value})});liveId=d.live_id;s.textContent=`Recording live stream. Session: ${liveId}`}catch(e){s.textContent=e.message}}
-async function makeLiveClip(){if(!liveId)return alert('Start a live capture first.');const s=document.getElementById('liveStatus');s.textContent='Creating live clip…';try{const d=await api('/api/live/clip',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({live_id:liveId,seconds_ago:+ago.value,duration:+liveDuration.value,aspect:'9:16'})});s.innerHTML=`Ready: <a href="${d.url}">Download live clip</a>`}catch(e){s.textContent=e.message}}
-async function stopLive(){if(!liveId)return;try{await api('/api/live/stop/'+liveId,{method:'POST'});document.getElementById('liveStatus').textContent='Live capture stopped.';liveId=null}catch(e){document.getElementById('liveStatus').textContent=e.message}}
+async function checkAuth(){try{const d=await api("/api/me");if(d.authenticated){document.getElementById("loginGate").hidden=true;document.getElementById("workspace").hidden=false;document.getElementById("logout").hidden=false;document.getElementById("displayName").textContent=d.user.name;document.getElementById("handle").textContent="@"+d.user.login;document.getElementById("avatar").src=d.user.avatar_url;loadHistory()}else{document.getElementById("loginGate").hidden=false;document.getElementById("workspace").hidden=true}}catch(e){document.getElementById("loginMessage").textContent=e.message}}
+async function logout(){await api("/auth/logout",{method:"POST"});location.reload()}
+async function loadHistory(){const box=document.getElementById("history");try{const d=await api("/api/history");if(!d.items.length){box.textContent="No clips yet. Your completed clips will appear here.";return}box.innerHTML=d.items.map(x=>'<div class="history-item"><div><strong>'+escapeHtml(x.source_name)+'</strong><div class="muted">'+escapeHtml(x.kind)+' · '+escapeHtml(x.created_at)+'</div></div><a href="'+x.url+'">Download</a></div>').join("")}catch(e){box.textContent=e.message}}
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function upload(){const f=document.getElementById("file").files[0];if(!f)return alert("Choose a video first.");const fd=new FormData();fd.append("file",f);const s=document.getElementById("uploadStatus");s.textContent="Uploading…";try{const d=await api("/api/upload",{method:"POST",body:fd});videoId=d.video_id;s.textContent="Uploaded: "+d.filename+" ("+(d.size/1048576).toFixed(1)+" MB)"}catch(e){s.textContent=e.message}}
+async function makeClip(){if(!videoId)return alert("Upload a video first.");const s=document.getElementById("clipStatus");s.textContent="Creating clip…";try{const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:+document.getElementById("start").value,duration:+document.getElementById("duration").value,aspect:document.getElementById("aspect").value})});s.innerHTML='Ready: <a href="'+d.url+'">Download your clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
+async function startLive(){const s=document.getElementById("liveStatus");s.textContent="Connecting…";try{const d=await api("/api/live/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:document.getElementById("liveUrl").value})});liveId=d.live_id;s.textContent="Recording live stream. Session: "+liveId}catch(e){s.textContent=e.message}}
+async function makeLiveClip(){if(!liveId)return alert("Start a live capture first.");const s=document.getElementById("liveStatus");s.textContent="Creating live clip…";try{const d=await api("/api/live/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({live_id:liveId,seconds_ago:+document.getElementById("ago").value,duration:+document.getElementById("liveDuration").value,aspect:"9:16"})});s.innerHTML='Ready: <a href="'+d.url+'">Download live clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
+async function stopLive(){if(!liveId)return;try{await api("/api/live/stop/"+liveId,{method:"POST"});document.getElementById("liveStatus").textContent="Live capture stopped.";liveId=null}catch(e){document.getElementById("liveStatus").textContent=e.message}}
+checkAuth();
 </script></body></html>
