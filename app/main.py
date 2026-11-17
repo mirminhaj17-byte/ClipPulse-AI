@@ -16,7 +16,7 @@ DB_PATH = BASE / "clippulse.sqlite3"
 app = FastAPI(title="ClipPulse AI", version="0.2.0")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET", "CHANGE-ME-before-production"),
+    secret_key=os.getenv("SESSION_SECRET") or secrets.token_urlsafe(48),
     same_site="lax",
     https_only=os.getenv("RENDER", "") == "true",
     max_age=60 * 60 * 24 * 7,
@@ -232,7 +232,7 @@ def start_live(req: LiveRequest, request: Request):
     except FileNotFoundError:
         raise HTTPException(500, "Streamlink is not installed.")
     with lock:
-        live_jobs[job_id] = {"proc":proc,"handle":handle,"path":target,"started":time.time(),"url":url}
+        live_jobs[job_id] = {"proc":proc,"handle":handle,"path":target,"started":time.time(),"url":url,"user_id":str(request.session["user"]["id"])}
     return {"live_id":job_id,"status":"recording"}
 
 class LiveClipRequest(BaseModel):
