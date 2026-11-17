@@ -73,7 +73,7 @@ async function findHighlights(){
   const d=await api("/api/auto-highlights?video_id="+encodeURIComponent(videoId)+"&clip_seconds="+seconds,{method:"POST"});
   suggestions=d.items||[];
   status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Scores combine audio activity and detected visual changes; review clips before publishing.";
-  if(!suggestions.length){results.innerHTML='<p class="muted">No clear speech-heavy moments found. You can still create a manual clip below.</p>';return}
+  if(!suggestions.length){results.innerHTML='<p class="muted">No strong audio-activity or visual scene-change moments were detected. You can still create a manual clip below.</p>';return}
   results.innerHTML=suggestions.map((x,i)=>'<div class="history-item"><div><strong>Candidate '+(i+1)+' · '+x.score+'/100</strong><div class="muted">'+formatTime(x.start)+' · '+Math.round(x.duration)+' sec · '+escapeHtml(x.reason)+'</div></div><button style="width:auto;margin:0" onclick="createSuggestedClip('+i+')">Make clip</button></div>').join("");
  }catch(e){status.textContent=e.message}
  finally{btn.disabled=false;btn.textContent="Find best moments automatically"}
