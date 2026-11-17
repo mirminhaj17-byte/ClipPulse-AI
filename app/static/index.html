@@ -29,6 +29,15 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <div class="profile"><img id="avatar" class="avatar" alt=""><div><strong id="displayName"></strong><div class="muted" id="handle"></div></div></div>
 <section class="hero"><div class="tag">CREATOR WORKSPACE · V1.1</div><h2>Turn long videos into short clips.</h2><p>Upload a recording or connect a public YouTube/Twitch livestream. Choose a moment, format it vertically, and export an MP4.</p></section>
 <section class="card"><h3>My clipping history</h3><div id="history" class="status">Loading your clips…</div></section>
+<section class="card">
+<h3>✨ Find my best moments</h3>
+<p class="muted">ClipPulse scans the audio for active speech and ranks promising moments. This first version uses a lightweight activity score, not a trained virality model.</p>
+<label>Suggested clip length</label>
+<select id="autoLength"><option value="20">20 seconds</option><option value="30" selected>30 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select>
+<button id="findHighlights" onclick="findHighlights()">Find best moments automatically</button>
+<div id="highlightStatus" class="status">Upload a video first to discover candidate highlights.</div>
+<div id="highlightResults"></div>
+</section>
 <div class="grid">
 <section class="card"><h3>① Recorded video</h3>
 <label>Choose a video file</label><input id="file" type="file" accept="video/*">
@@ -48,13 +57,36 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 </section></div></main>
 <footer>ClipPulse AI · Free/open-source starter · Processing runs on your server</footer>
 <script>
-let videoId=null,liveId=null;
+let videoId=null,liveId=null,suggestions=[];
 async function api(path,opts={}){const r=await fetch(path,opts);const d=await r.json().catch(()=>({detail:"Unexpected server response"}));if(!r.ok)throw Error(d.detail||"Request failed");return d}
 async function checkAuth(){try{const d=await api("/api/me");if(d.authenticated){document.getElementById("loginGate").hidden=true;document.getElementById("workspace").hidden=false;document.getElementById("logout").hidden=false;document.getElementById("displayName").textContent=d.user.name;document.getElementById("handle").textContent="@"+d.user.login;document.getElementById("avatar").src=d.user.avatar_url;loadHistory()}else{document.getElementById("loginGate").hidden=false;document.getElementById("workspace").hidden=true}}catch(e){document.getElementById("loginMessage").textContent=e.message}}
 async function logout(){await api("/auth/logout",{method:"POST"});location.reload()}
 async function loadHistory(){const box=document.getElementById("history");try{const d=await api("/api/history");if(!d.items.length){box.textContent="No clips yet. Your completed clips will appear here.";return}box.innerHTML=d.items.map(x=>'<div class="history-item"><div><strong>'+escapeHtml(x.source_name)+'</strong><div class="muted">'+escapeHtml(x.kind)+' · '+escapeHtml(x.created_at)+'</div></div><a href="'+x.url+'">Download</a></div>').join("")}catch(e){box.textContent=e.message}}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
 async function upload(){const f=document.getElementById("file").files[0];if(!f)return alert("Choose a video first.");const fd=new FormData();fd.append("file",f);const s=document.getElementById("uploadStatus");s.textContent="Uploading…";try{const d=await api("/api/upload",{method:"POST",body:fd});videoId=d.video_id;s.textContent="Uploaded: "+d.filename+" ("+(d.size/1048576).toFixed(1)+" MB)"}catch(e){s.textContent=e.message}}
+async function findHighlights(){
+ if(!videoId){alert("Upload a video first.");return}
+ const btn=document.getElementById("findHighlights"),status=document.getElementById("highlightStatus"),results=document.getElementById("highlightResults");
+ btn.disabled=true;btn.textContent="Analysing audio…";status.textContent="Scanning audio activity. Large videos may take a few minutes on the free server.";results.innerHTML="";
+ try{
+  const seconds=Number(document.getElementById("autoLength").value);
+  const d=await api("/api/auto-highlights?video_id="+encodeURIComponent(videoId)+"&clip_seconds="+seconds,{method:"POST"});
+  suggestions=d.items||[];
+  status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Higher scores indicate stronger speech activity, not guaranteed virality.";
+  if(!suggestions.length){results.innerHTML='<p class="muted">No clear speech-heavy moments found. You can still create a manual clip below.</p>';return}
+  results.innerHTML=suggestions.map((x,i)=>'<div class="history-item"><div><strong>Candidate '+(i+1)+' · '+x.score+'/100</strong><div class="muted">'+formatTime(x.start)+' · '+Math.round(x.duration)+' sec · '+escapeHtml(x.reason)+'</div></div><button style="width:auto;margin:0" onclick="createSuggestedClip('+i+')">Make clip</button></div>').join("");
+ }catch(e){status.textContent=e.message}
+ finally{btn.disabled=false;btn.textContent="Find best moments automatically"}
+}
+function formatTime(seconds){const n=Math.max(0,Math.floor(seconds));return Math.floor(n/60)+":"+String(n%60).padStart(2,"0")}
+async function createSuggestedClip(index){
+ const x=suggestions[index];if(!x||!videoId)return;
+ const status=document.getElementById("highlightStatus");status.textContent="Creating selected clip…";
+ try{
+  const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:x.start,duration:x.duration,aspect:document.getElementById("aspect").value})});
+  status.innerHTML='Clip ready: <a href="'+d.url+'">Download candidate '+(index+1)+'</a>';loadHistory();
+ }catch(e){status.textContent=e.message}
+}
 async function makeClip(){if(!videoId)return alert("Upload a video first.");const s=document.getElementById("clipStatus");s.textContent="Creating clip…";try{const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:+document.getElementById("start").value,duration:+document.getElementById("duration").value,aspect:document.getElementById("aspect").value})});s.innerHTML='Ready: <a href="'+d.url+'">Download your clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
 async function startLive(){const s=document.getElementById("liveStatus");s.textContent="Connecting…";try{const d=await api("/api/live/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:document.getElementById("liveUrl").value})});liveId=d.live_id;s.textContent="Recording live stream. Session: "+liveId}catch(e){s.textContent=e.message}}
 async function makeLiveClip(){if(!liveId)return alert("Start a live capture first.");const s=document.getElementById("liveStatus");s.textContent="Creating live clip…";try{const d=await api("/api/live/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({live_id:liveId,seconds_ago:+document.getElementById("ago").value,duration:+document.getElementById("liveDuration").value,aspect:"9:16"})});s.innerHTML='Ready: <a href="'+d.url+'">Download live clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
