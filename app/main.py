@@ -49,9 +49,16 @@ def init_db():
 init_db()
 
 def current_user(request: Request):
+    # Per-browser guest identity; no OAuth setup is required.
     user = request.session.get("user")
     if not user:
-        raise HTTPException(401, "Please sign in with GitHub first.")
+        user = {
+            "id": "guest-" + uuid.uuid4().hex,
+            "login": "guest",
+            "name": "Guest creator",
+            "avatar_url": "",
+        }
+        request.session["user"] = user
     return user
 
 def save_history(user, kind, source_name, filename):
@@ -138,8 +145,8 @@ def logout(request: Request):
 
 @app.get("/api/me")
 def me(request: Request):
-    user = request.session.get("user")
-    return {"authenticated": bool(user), "user": user}
+    user = current_user(request)
+    return {"authenticated": True, "user": user, "guest_mode": True}
 
 @app.get("/api/history")
 def history(request: Request):
