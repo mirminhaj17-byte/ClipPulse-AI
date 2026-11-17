@@ -2,6 +2,13 @@
 
 A self-hosted browser app for recorded-video clipping and public YouTube/Twitch live capture.
 
+## v0.3 preview features
+- Automatic candidate highlight suggestions based on low-memory audio activity analysis.
+- Ranked candidate moments with timestamps and one-tap clip creation.
+- Analysis scans mono low-rate audio instead of loading the full video into memory.
+
+The first-pass ranker is a transparent speech/activity heuristic, not a trained model and not a guarantee of virality. Semantic understanding, speaker tracking, animated captions, persistent storage and resilient background jobs are future upgrades.
+
 ## v0.2 features
 - GitHub sign-in for each creator.
 - Private creator dashboard and per-account clipping history.
@@ -42,7 +49,7 @@ docker run --rm -p 8000:8000 -e SESSION_SECRET="replace-with-a-long-random-value
 ```
 
 ## Free hosting limitations
-The app uses SQLite for history in this starter. Render's free service filesystem is temporary, so the database and generated MP4 files can disappear after a restart or redeploy. For durable history and downloadable clips, connect a free managed database and object storage before relying on long-term retention. Free Render instances can also spin down when idle and have limited memory/CPU; large uploads may still fail during FFmpeg processing.
+The app uses SQLite for history in this starter. Render's free service filesystem is temporary, so the database and generated MP4 files can disappear after a restart or redeploy. For durable history and downloadable clips, connect a free managed database and object storage before relying on long-term retention. Free Render instances can also spin down when idle and have limited memory/CPU; large uploads may still fail during FFmpeg processing. Automatic highlight analysis is audio-only but can still take time on long videos.
 
 ## Important notes
 - Use only content you own or are authorized to download/record. Platform terms and copyright law still apply.
