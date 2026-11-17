@@ -64,7 +64,7 @@ def _audio_activity(path: Path, duration: float):
         cursor = max(cursor, end)
     if cursor < duration:
         active.append((cursor, duration))
-    return (active or [(0.0, duration)]), True
+    # Do not mistake a completely silent track for continuous activity.\n    return active, True
 
 
 def _scene_changes(path: Path):
