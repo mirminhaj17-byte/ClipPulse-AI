@@ -120,7 +120,7 @@ def detect_highlights(path: Path, clip_seconds: int = 30, limit: int = 6):
         audio_points = coverage * 32 if audio_available else 0
         visual_points = min(scene_count, 5) * 7
         score = min(99, round(35 + audio_points + visual_points))
-        if (not audio_available) or coverage >= 0.10 or scene_count:
+        if coverage >= 0.10 or scene_count:
             reason_parts = []
             if audio_available and coverage >= 0.55:
                 reason_parts.append("active audio")
