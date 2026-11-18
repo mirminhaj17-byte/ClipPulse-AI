@@ -292,8 +292,16 @@ def start_live(req: LiveRequest, request: Request):
         proc = subprocess.Popen(["streamlink","--stdout",url,"best"], stdout=handle, stderr=subprocess.DEVNULL)
     except FileNotFoundError:
         raise HTTPException(500, "Streamlink is not installed.")
+    owner_id = str(request.session["user"]["id"])
     with lock:
-        live_jobs[job_id] = {"proc":proc,"handle":handle,"path":target,"started":time.time(),"url":url,"user_id":str(request.session["user"]["id"])}
+        live_jobs[job_id] = {"proc":proc,"handle":handle,"path":target,"started":time.time(),"url":url,"user_id":owner_id}
+    with db() as conn:
+        conn.execute("""CREATE TABLE IF NOT EXISTS live_sessions (
+            live_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, url TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )""")
+        conn.execute("INSERT OR REPLACE INTO live_sessions(live_id,user_id,url) VALUES(?,?,?)",
+                     (job_id, owner_id, url))
     return {"live_id":job_id,"status":"recording"}
 
 class LiveClipRequest(BaseModel):
@@ -307,8 +315,32 @@ def clip_live(req: LiveClipRequest, request: Request):
     user = current_user(request)
     with lock:
         job = live_jobs.get(req.live_id)
-    if not job or job.get("user_id") != str(user["id"]):
-        raise HTTPException(404, "Live recording not found. Start a new capture and try again.")
+    if not job:
+        # A deploy/restart kills the in-memory Streamlink process. Recover the
+        # saved source automatically, then ask the creator to let it buffer.
+        with db() as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS live_sessions (
+                live_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, url TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )""")
+            saved = conn.execute("SELECT url FROM live_sessions WHERE live_id=? AND user_id=?",
+                                 (req.live_id, str(user["id"]))).fetchone()
+        if not saved:
+            raise HTTPException(404, "Live session expired. Start a new capture.")
+        recovered_path = LIVE / f"{req.live_id}.ts"
+        try:
+            handle = recovered_path.open("wb")
+            proc = subprocess.Popen(["streamlink","--stdout",saved["url"],"best"],
+                                    stdout=handle, stderr=subprocess.DEVNULL)
+        except FileNotFoundError:
+            raise HTTPException(500, "Streamlink is not installed.")
+        job = {"proc":proc,"handle":handle,"path":recovered_path,"started":time.time(),
+               "url":saved["url"],"user_id":str(user["id"])}
+        with lock:
+            live_jobs[req.live_id] = job
+        raise HTTPException(409, "The server restarted and live capture has been automatically resumed. Keep this page open and wait at least 70 seconds before clipping.")
+    if job.get("user_id") != str(user["id"]):
+        raise HTTPException(404, "Live recording not found.")
     if not 1 <= req.duration <= 120 or not req.duration <= req.seconds_ago <= 3600:
         raise HTTPException(400, "Clip length must be 1–120 seconds, and the clip must end at least its own length ago.")
     if req.aspect not in ("9:16", "16:9", "1:1"):
@@ -391,6 +423,9 @@ def stop_live(live_id: str, request: Request):
         live_jobs.pop(live_id, None)
     job["proc"].terminate()
     job["handle"].close()
+    with db() as conn:
+        conn.execute("DELETE FROM live_sessions WHERE live_id=? AND user_id=?",
+                     (live_id, str(user["id"])))
     return {"status":"stopped","recording":job["path"].name}
 
 @app.get("/api/download/{clip_id}")
