@@ -1,4 +1,4 @@
-import os, re, uuid, subprocess, threading, time, sqlite3, secrets, json
+import os, re, uuid, subprocess, threading, time, sqlite3, secrets, json, shutil
 from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import Request as URLRequest, urlopen
@@ -288,31 +288,78 @@ def clip_live(req: LiveClipRequest, request: Request):
     with lock:
         job = live_jobs.get(req.live_id)
     if not job or job.get("user_id") != str(user["id"]):
-        raise HTTPException(404, "Live recording not found.")
+        raise HTTPException(404, "Live recording not found. Start a new capture and try again.")
     if not 1 <= req.duration <= 120 or not req.duration <= req.seconds_ago <= 3600:
-        raise HTTPException(400, "Choose a clip up to 120 seconds, ending no more than 60 minutes ago.")
-    if req.aspect not in ("9:16","16:9","1:1"):
+        raise HTTPException(400, "Clip length must be 1–120 seconds, and the clip must end at least its own length ago.")
+    if req.aspect not in ("9:16", "16:9", "1:1"):
         raise HTTPException(400, "Unsupported aspect ratio.")
-    elapsed = time.time() - job["started"]
-    start = max(0, elapsed - req.seconds_ago)
-    if not clip_semaphore.acquire(blocking=False):
-        raise HTTPException(429, "Another clip is being processed. Please wait and try again.")
+
+    source = job["path"]
+    proc = job["proc"]
+    if proc.poll() is not None:
+        raise HTTPException(409, "The live stream has stopped. Start a new capture.")
+    if not source.exists() or source.stat().st_size < 188 * 10:
+        raise HTTPException(409, "The live stream has not buffered enough video yet. Keep capture running for 30–60 seconds, then retry.")
+
+    # Snapshot the growing transport stream so FFmpeg reads a stable file.
+    snapshot = LIVE / f"snapshot_{uuid.uuid4().hex}.ts"
     outname = f"liveclip_{uuid.uuid4().hex}.mp4"
     out = OUTPUTS / outname
-    vf = {"9:16":"scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
-          "16:9":"scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
-          "1:1":"scale=720:720:force_original_aspect_ratio=increase,crop=720:720"}[req.aspect]
     try:
-        run_ffmpeg(["-threads","1","-filter_threads","1","-ss",str(start),"-i",str(job["path"]),
-                    "-t",str(req.duration),"-vf",vf,"-c:v","libx264","-preset","ultrafast",
-                    "-threads","1","-crf","28","-c:a","aac","-b:a","96k","-movflags","+faststart",str(out)])
-    except RuntimeError as exc:
+        shutil.copyfile(source, snapshot)
+        # MPEG-TS consists of 188-byte packets; discard a partial final packet.
+        size = snapshot.stat().st_size
+        usable = size - (size % 188)
+        if usable < 188 * 10:
+            raise HTTPException(409, "The live recording is still buffering. Wait another 30 seconds and retry.")
+        with snapshot.open("r+b") as stream:
+            stream.truncate(usable)
+
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", str(snapshot)],
+            capture_output=True, text=True, timeout=20
+        )
+        try:
+            buffered_seconds = float(probe.stdout.strip())
+        except (TypeError, ValueError):
+            buffered_seconds = 0.0
+        if probe.returncode or buffered_seconds <= 0:
+            raise HTTPException(422, "The live capture file is not a valid video stream. Stop this capture and start a fresh one.")
+
+        # 'seconds_ago' means how far before the live edge the clip should END.
+        if buffered_seconds < req.seconds_ago + req.duration:
+            needed = int(req.seconds_ago + req.duration - buffered_seconds)
+            raise HTTPException(409, f"Not enough recorded footage yet. Keep the stream running for about {needed} more seconds, then retry.")
+
+        clip_start = buffered_seconds - req.seconds_ago - req.duration
+        vf = {"9:16":"scale=720:1280:force_original_aspect_ratio=increase,crop=720:1280",
+              "16:9":"scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720",
+              "1:1":"scale=720:720:force_original_aspect_ratio=increase,crop=720:720"}[req.aspect]
+        if not clip_semaphore.acquire(blocking=False):
+            raise HTTPException(429, "Another clip is being processed. Please wait and try again.")
+        try:
+            run_ffmpeg(["-threads","1","-filter_threads","1","-fflags","+discardcorrupt+genpts",
+                        "-ss",str(clip_start),"-i",str(snapshot),"-t",str(req.duration),
+                        "-vf",vf,"-c:v","libx264","-preset","ultrafast","-threads","1",
+                        "-crf","28","-c:a","aac","-b:a","96k","-movflags","+faststart",str(out)])
+        finally:
+            clip_semaphore.release()
+        save_history(user, "Live", job["url"], outname)
+        return {"clip_id":outname,"url":f"/api/download/{outname}",
+                "buffered_seconds":round(buffered_seconds,1),"start":round(clip_start,1)}
+    except HTTPException:
         out.unlink(missing_ok=True)
-        raise HTTPException(500, f"Live clip failed: {exc}")
+        raise
+    except subprocess.TimeoutExpired:
+        out.unlink(missing_ok=True)
+        raise HTTPException(408, "Checking the live recording took too long. Wait a little and retry.")
+    except (OSError, RuntimeError) as exc:
+        out.unlink(missing_ok=True)
+        raise HTTPException(422, f"Could not create a clip from this live recording: {str(exc)[-500:]}")
     finally:
-        clip_semaphore.release()
-    save_history(user, "Live", job["url"], outname)
-    return {"clip_id":outname,"url":f"/api/download/{outname}"}
+        snapshot.unlink(missing_ok=True)
+
 
 @app.post("/api/live/stop/{live_id}")
 def stop_live(live_id: str, request: Request):
