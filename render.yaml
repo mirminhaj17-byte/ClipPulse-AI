@@ -4,11 +4,7 @@ services:
     runtime: docker
     repo: https://github.com/mirminhaj17-byte/ClipPulse-AI
     branch: main
-    plan: starter
+    plan: free
     region: oregon
     dockerfilePath: ./Dockerfile
     dockerContext: .
-    disk:
-      name: clippulse-data
-      mountPath: /app/data
-      sizeGB: 1
