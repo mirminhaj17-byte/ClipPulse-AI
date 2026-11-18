@@ -52,7 +52,7 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <label>Clip length (seconds)</label><input id="liveDuration" type="number" min="1" max="120" value="30">
 <label>How many seconds back should the clip end?</label><input id="ago" type="number" min="1" max="3600" value="40">
 <button onclick="makeLiveClip()">Clip recent live moment</button><button class="secondary" onclick="stopLive()">Stop live capture</button>
-<div class="note">Live capture requires a continuously running server. Use streams you own or are authorized to record.</div>
+<div class="note">Keep this page open while capturing. The clip ends the selected number of seconds before the live edge, so capture must run for at least clip length + seconds back (for example, 30 + 40 = 70 seconds). Use streams you own or are authorized to record.</div>
 </section></div></main>
 <footer>ClipPulse AI · Free/open-source starter · Processing runs on your server</footer>
 <script>
@@ -87,7 +87,7 @@ async function createSuggestedClip(index){
  }catch(e){status.textContent=e.message}
 }
 async function makeClip(){if(!videoId)return alert("Upload a video first.");const s=document.getElementById("clipStatus");s.textContent="Creating clip…";try{const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:+document.getElementById("start").value,duration:+document.getElementById("duration").value,aspect:document.getElementById("aspect").value})});s.innerHTML='Ready: <a href="'+d.url+'">Download your clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
-async function startLive(){const s=document.getElementById("liveStatus");s.textContent="Connecting…";try{const d=await api("/api/live/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:document.getElementById("liveUrl").value})});liveId=d.live_id;s.textContent="Recording live stream. Session: "+liveId}catch(e){s.textContent=e.message}}
+async function startLive(){const s=document.getElementById("liveStatus");s.textContent="Connecting to the live stream…";try{const d=await api("/api/live/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:document.getElementById("liveUrl").value})});liveId=d.live_id;const required=Number(document.getElementById("liveDuration").value)+Number(document.getElementById("ago").value);s.textContent="Capture started. Let it run for at least "+required+" seconds before requesting a clip. Keep this page open. Session: "+liveId}catch(e){s.textContent=e.message}}
 async function makeLiveClip(){if(!liveId)return alert("Start a live capture first.");const s=document.getElementById("liveStatus");s.textContent="Creating live clip…";try{const d=await api("/api/live/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({live_id:liveId,seconds_ago:+document.getElementById("ago").value,duration:+document.getElementById("liveDuration").value,aspect:"9:16"})});s.innerHTML='Ready: <a href="'+d.url+'">Download live clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
 async function stopLive(){if(!liveId)return;try{await api("/api/live/stop/"+liveId,{method:"POST"});document.getElementById("liveStatus").textContent="Live capture stopped.";liveId=null}catch(e){document.getElementById("liveStatus").textContent=e.message}}
 checkAuth();
