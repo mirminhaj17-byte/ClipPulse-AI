@@ -46,7 +46,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 live_jobs = {}
 lock = threading.Lock()
 clip_semaphore = threading.Semaphore(1)
-MAX_UPLOAD_BYTES = 550 * 1024 * 1024
+MAX_UPLOAD_BYTES = 200 * 1024 * 1024
 
 def db():
     conn = sqlite3.connect(DB_PATH)
@@ -109,6 +109,12 @@ def home():
 @app.get("/api/health")
 def health():
     return {"ok": True, "name": "ClipPulse AI", "version": "0.2.0"}
+
+@app.get("/api/ping")
+def ping():
+    # Lightweight browser heartbeat. On Render Free, periodic inbound requests
+    # keep an actively used live-capture session from idling out.
+    return {"ok": True, "time": int(time.time())}
 
 @app.get("/auth/github")
 def github_login(request: Request):
@@ -309,6 +315,19 @@ class LiveClipRequest(BaseModel):
     seconds_ago: int = 45
     duration: int = 30
     aspect: str = "9:16"
+
+@app.get("/api/live/status/{live_id}")
+def live_status(live_id: str, request: Request):
+    user = current_user(request)
+    with lock:
+        job = live_jobs.get(live_id)
+    if not job or job.get("user_id") != str(user["id"]):
+        return {"recording": False, "reason": "The free server restarted or the capture ended. Start a new capture."}
+    proc = job["proc"]
+    alive = proc.poll() is None
+    size = job["path"].stat().st_size if job["path"].exists() else 0
+    return {"recording": alive, "bytes": size,
+            "reason": "" if alive else "The stream process stopped. Start a new capture."}
 
 @app.post("/api/live/clip")
 def clip_live(req: LiveClipRequest, request: Request):
