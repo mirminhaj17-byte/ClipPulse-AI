@@ -15,7 +15,7 @@ label{display:block;color:var(--muted);font-size:13px;margin:13px 0 6px}
 input,select{width:100%;padding:12px;border:1px solid var(--line);background:#0d1118;color:white;border-radius:9px;font-size:15px}
 button,.btn{background:var(--orange);border:0;color:#141414;font-weight:800;padding:12px 16px;border-radius:9px;margin-top:14px;width:100%;font-size:15px;cursor:pointer;text-align:center;text-decoration:none;display:block}
 button.secondary{background:#293140;color:white}.status{white-space:pre-wrap;color:#c6d0de;margin-top:12px;font-size:13px;line-height:1.5}
-a{color:#ffb454}.note{color:var(--muted);font-size:12px;line-height:1.5;margin-top:12px}
+.progress{margin-top:12px;padding:12px;background:#0d1118;border:1px solid var(--line);border-radius:10px}.progress-top{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:#dce4ef}.progress-track{height:7px;background:#293140;border-radius:20px;overflow:hidden;margin-top:9px}.progress-fill{height:100%;width:0;background:var(--orange);border-radius:20px;transition:width .25s}.progress-fill.busy{width:35%;animation:move 1.2s ease-in-out infinite alternate}@keyframes move{from{transform:translateX(-20%)}to{transform:translateX(210%)}}.progress-detail{font-size:12px;color:var(--muted);margin-top:7px;line-height:1.4}.stage-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.stage-chip{font-size:10px;padding:4px 7px;border:1px solid var(--line);border-radius:20px;color:var(--muted)}.stage-chip.active{border-color:var(--orange);color:#ffc078}.stage-chip.done{border-color:#287b56;color:#80d7a8}.a{color:#ffb454}.note{color:var(--muted);font-size:12px;line-height:1.5;margin-top:12px}
 footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 .profile{display:flex;align-items:center;gap:12px;margin:18px 0}.avatar{width:42px;height:42px;border-radius:50%}.history-item{padding:13px 0;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:12px;align-items:center}.history-item:last-child{border:0}.muted{color:var(--muted);font-size:12px}
 [hidden]{display:none!important}
@@ -34,21 +34,21 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <label>Suggested clip length</label>
 <select id="autoLength"><option value="20">20 seconds</option><option value="20" selected>20 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select>
 <button id="findHighlights" onclick="findHighlights()">Find best moments automatically</button>
-<div id="highlightStatus" class="status">Upload a video first to discover candidate highlights.</div>
+<div id="highlightStatus" class="status">Upload a video first to discover candidate highlights.</div><div id="highlightProgress"></div>
 <div id="highlightResults"></div>
 </section>
 <div class="grid">
 <section class="card"><h3>① Recorded video</h3>
 <label>Choose a video file</label><input id="file" type="file" accept="video/*">
-<button onclick="upload()">Upload video</button><div class="status" id="uploadStatus">No video selected yet.</div>
+<button onclick="upload()">Upload video</button><div class="status" id="uploadStatus">No video selected yet.</div><div id="uploadProgress"></div>
 <label>Start time (seconds)</label><input id="start" type="number" min="0" value="0">
 <label>Clip length (seconds, max 180)</label><input id="duration" type="number" min="1" max="180" value="30">
 <label>Output format</label><select id="aspect"><option>9:16</option><option>16:9</option><option>1:1</option></select>
-<button onclick="makeClip()">Create clip</button><div class="status" id="clipStatus"></div>
+<button onclick="makeClip()">Create clip</button><div class="status" id="clipStatus"></div><div id="clipProgress"></div>
 </section>
 <section class="card"><h3>② Live clipping</h3>
 <label>YouTube Live or Twitch URL</label><input id="liveUrl" type="url" placeholder="https://www.youtube.com/watch?v=...">
-<button onclick="startLive()">Start live capture</button><div class="status" id="liveStatus">No live capture running.</div>
+<button onclick="startLive()">Start live capture</button><div class="status" id="liveStatus">No live capture running.</div><div id="liveProgress"></div>
 <label>Clip length (seconds)</label><input id="liveDuration" type="number" min="1" max="120" value="30">
 <label>How many seconds back should the clip end?</label><input id="ago" type="number" min="1" max="3600" value="40">
 <button onclick="makeLiveClip()">Clip recent live moment</button><button class="secondary" onclick="stopLive()">Stop live capture</button>
@@ -57,21 +57,27 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <footer>ClipPulse AI · Free/open-source starter · Processing runs on your server</footer>
 <script>
 let videoId=null,liveId=null,suggestions=[];
+function showProgress(id,title,detail,stage="busy",done=false){
+ const host=document.getElementById(id);if(!host)return;
+ const steps=["Preparing","Processing","Finishing"];
+ const active=stage==="done"?3:stage==="processing"?1:stage==="finishing"?2:0;
+ host.innerHTML='<div class="progress"><div class="progress-top"><strong>'+escapeHtml(title)+'</strong><span>'+(done?'Complete':stage==="upload"?'Uploading':stage==="analysis"?'Analysing':stage==="finishing"?'Finishing':'Working')+'</span></div><div class="progress-track"><div class="progress-fill '+(done?'':'busy')+'" style="width:'+(done?'100%':'35%')+'"></div></div><div class="progress-detail">'+escapeHtml(detail)+'</div><div class="stage-list">'+steps.map((s,i)=>'<span class="stage-chip '+(i<active?'done':i===active&&!done?'active':done?'done':'')+'">'+s+'</span>').join('')+'</div></div>';
+}
 async function api(path,opts={}){const r=await fetch(path,opts);const d=await r.json().catch(()=>({detail:"Unexpected server response"}));if(!r.ok)throw Error(d.detail||"Request failed");return d}
 async function checkAuth(){try{const d=await api("/api/me");document.getElementById("loginGate").hidden=true;document.getElementById("workspace").hidden=false;document.getElementById("logout").hidden=true;document.getElementById("displayName").textContent=d.user.name||"Guest creator";document.getElementById("handle").textContent="No account needed · this browser session";document.getElementById("avatar").hidden=true;loadHistory()}catch(e){document.getElementById("loginGate").hidden=false;document.getElementById("workspace").hidden=true;document.getElementById("loginMessage").textContent=e.message}}
 async function logout(){location.reload()}
 async function loadHistory(){const box=document.getElementById("history");try{const d=await api("/api/history");if(!d.items.length){box.textContent="No clips yet. Your completed clips will appear here.";return}box.innerHTML=d.items.map(x=>'<div class="history-item"><div><strong>'+escapeHtml(x.source_name)+'</strong><div class="muted">'+escapeHtml(x.kind)+' · '+escapeHtml(x.created_at)+'</div></div><a href="'+x.url+'">Download</a></div>').join("")}catch(e){box.textContent=e.message}}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
-async function upload(){const f=document.getElementById("file").files[0];if(!f)return alert("Choose a video first.");const fd=new FormData();fd.append("file",f);const s=document.getElementById("uploadStatus");s.textContent="Uploading…";try{const d=await api("/api/upload",{method:"POST",body:fd});videoId=d.video_id;s.textContent="Uploaded: "+d.filename+" ("+(d.size/1048576).toFixed(1)+" MB)"}catch(e){s.textContent=e.message}}
+async function upload(){const f=document.getElementById("file").files[0];if(!f)return alert("Choose a video first.");const fd=new FormData();fd.append("file",f);const s=document.getElementById("uploadStatus");s.textContent="Uploading video…";showProgress("uploadProgress","Uploading "+f.name,"Sending video to your ClipPulse workspace. Keep this page open.","upload");try{const d=await new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open("POST","/api/upload");x.upload.onprogress=e=>{if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*100);const host=document.getElementById("uploadProgress");host.innerHTML='<div class="progress"><div class="progress-top"><strong>Uploading video</strong><span>'+pct+'%</span></div><div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div><div class="progress-detail">'+(e.loaded/1048576).toFixed(1)+' MB of '+(e.total/1048576).toFixed(1)+' MB transferred</div></div>'}};x.onload=()=>{let data={};try{data=JSON.parse(x.responseText)}catch{};if(x.status>=200&&x.status<300)resolve(data);else reject(Error(data.detail||"Upload failed"))};x.onerror=()=>reject(Error("Network error during upload"));x.send(fd)});videoId=d.video_id;s.textContent="Upload complete: "+d.filename+" ("+(d.size/1048576).toFixed(1)+" MB)";showProgress("uploadProgress","Upload complete","Your video is ready for clipping and highlight analysis.","done",true)}catch(e){s.textContent=e.message;showProgress("uploadProgress","Upload failed",e.message,"done",true)}}
 async function findHighlights(){
  if(!videoId){alert("Upload a video first.");return}
  const btn=document.getElementById("findHighlights"),status=document.getElementById("highlightStatus"),results=document.getElementById("highlightResults");
- btn.disabled=true;btn.textContent="Analysing video…";status.textContent="Scanning audio activity and visual scene changes. Large videos may take a few minutes on the free server.";results.innerHTML="";
+ btn.disabled=true;btn.textContent="Analysing video…";status.textContent="Scanning audio activity and visual scene changes.";showProgress("highlightProgress","Analysing video","ClipPulse is checking audio activity and scene changes. This step can take a few minutes; no percentage is available from the current analysis engine.","analysis");results.innerHTML="";
  try{
   const seconds=Number(document.getElementById("autoLength").value);
   const d=await api("/api/auto-highlights?video_id="+encodeURIComponent(videoId)+"&clip_seconds="+seconds,{method:"POST"});
   suggestions=d.items||[];
-  status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Scores combine audio activity and detected visual changes; review clips before publishing.";
+  status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Scores combine audio activity and detected visual changes; review clips before publishing.";showProgress("highlightProgress","Analysis complete","Found "+suggestions.length+" candidate moments. Choose Make clip to render one.","done",true);
   if(!suggestions.length){results.innerHTML='<p class="muted">No strong audio-activity or visual scene-change moments were detected. You can still create a manual clip below.</p>';return}
   results.innerHTML=suggestions.map((x,i)=>'<div class="history-item"><div><strong>Candidate '+(i+1)+' · '+x.score+'/100</strong><div class="muted">'+formatTime(x.start)+' · '+Math.round(x.duration)+' sec · '+escapeHtml(x.reason)+'</div></div><button style="width:auto;margin:0" onclick="createSuggestedClip('+i+')">Make clip</button></div>').join("");
  }catch(e){status.textContent=e.message}
@@ -80,15 +86,15 @@ async function findHighlights(){
 function formatTime(seconds){const n=Math.max(0,Math.floor(seconds));return Math.floor(n/60)+":"+String(n%60).padStart(2,"0")}
 async function createSuggestedClip(index){
  const x=suggestions[index];if(!x||!videoId)return;
- const status=document.getElementById("highlightStatus");status.textContent="Creating selected clip…";
+ const status=document.getElementById("highlightStatus");status.textContent="Creating selected clip…";showProgress("highlightProgress","Rendering selected highlight","Encoding video, applying the selected aspect ratio and preparing the MP4. The server does not yet expose exact FFmpeg percentage.","processing");
  try{
   const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:x.start,duration:x.duration,aspect:document.getElementById("aspect").value})});
-  status.innerHTML='Clip ready: <a href="'+d.url+'">Download candidate '+(index+1)+'</a>';loadHistory();
+  status.innerHTML='Clip ready: <a href="'+d.url+'">Download candidate '+(index+1)+'</a>';showProgress("highlightProgress","Clip ready","Your MP4 has been created successfully.","done",true);loadHistory();
  }catch(e){status.textContent=e.message}
 }
-async function makeClip(){if(!videoId)return alert("Upload a video first.");const s=document.getElementById("clipStatus");s.textContent="Creating clip…";try{const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:+document.getElementById("start").value,duration:+document.getElementById("duration").value,aspect:document.getElementById("aspect").value})});s.innerHTML='Ready: <a href="'+d.url+'">Download your clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
-async function startLive(){const s=document.getElementById("liveStatus");s.textContent="Connecting to the live stream…";try{const d=await api("/api/live/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:document.getElementById("liveUrl").value})});liveId=d.live_id;const required=Number(document.getElementById("liveDuration").value)+Number(document.getElementById("ago").value);s.textContent="Capture started. Let it run for at least "+required+" seconds before requesting a clip. Keep this page open. Session: "+liveId}catch(e){s.textContent=e.message}}
-async function makeLiveClip(){if(!liveId)return alert("Start a live capture first.");const s=document.getElementById("liveStatus");s.textContent="Creating live clip…";try{const d=await api("/api/live/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({live_id:liveId,seconds_ago:+document.getElementById("ago").value,duration:+document.getElementById("liveDuration").value,aspect:"9:16"})});s.innerHTML='Ready: <a href="'+d.url+'">Download live clip</a>';loadHistory()}catch(e){s.textContent=e.message}}
+async function makeClip(){if(!videoId)return alert("Upload a video first.");const s=document.getElementById("clipStatus");s.textContent="Creating clip…";showProgress("clipProgress","Creating your clip","FFmpeg is cutting the selected time range and encoding your MP4. Exact percentage is not currently available.","processing");try{const d=await api("/api/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({video_id:videoId,start:+document.getElementById("start").value,duration:+document.getElementById("duration").value,aspect:document.getElementById("aspect").value})});s.innerHTML='Ready: <a href="'+d.url+'">Download your clip</a>';showProgress("clipProgress","Clip ready","Your MP4 is ready to download.","done",true);loadHistory()}catch(e){s.textContent=e.message}}
+async function startLive(){const s=document.getElementById("liveStatus");s.textContent="Connecting to the live stream…";showProgress("liveProgress","Connecting to stream","ClipPulse is starting Streamlink and opening a live recording file.","processing");try{const d=await api("/api/live/start",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url:document.getElementById("liveUrl").value})});liveId=d.live_id;const required=Number(document.getElementById("liveDuration").value)+Number(document.getElementById("ago").value);s.textContent="Capture started. Let it run for at least "+required+" seconds before requesting a clip. Keep this page open. Session: "+liveId;showProgress("liveProgress","Live capture running","Streamlink is recording. Wait at least "+required+" seconds to build enough buffer for your chosen clip.","done",true)}catch(e){s.textContent=e.message}}
+async function makeLiveClip(){if(!liveId)return alert("Start a live capture first.");const s=document.getElementById("liveStatus");s.textContent="Creating live clip…";showProgress("liveProgress","Preparing live clip","Checking the recorded buffer, validating the stream and encoding the selected moment.","processing");try{const d=await api("/api/live/clip",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({live_id:liveId,seconds_ago:+document.getElementById("ago").value,duration:+document.getElementById("liveDuration").value,aspect:"9:16"})});s.innerHTML='Ready: <a href="'+d.url+'">Download live clip</a>';showProgress("liveProgress","Live clip ready","Your live moment has been encoded and is ready to download.","done",true);loadHistory()}catch(e){s.textContent=e.message}}
 async function stopLive(){if(!liveId)return;try{await api("/api/live/stop/"+liveId,{method:"POST"});document.getElementById("liveStatus").textContent="Live capture stopped.";liveId=null}catch(e){document.getElementById("liveStatus").textContent=e.message}}
 checkAuth();
 </script></body></html>
