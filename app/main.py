@@ -14,10 +14,30 @@ UPLOADS, OUTPUTS, LIVE = BASE / "uploads", BASE / "clips", BASE / "live"
 for folder in (UPLOADS, OUTPUTS, LIVE):
     folder.mkdir(parents=True, exist_ok=True)
 DB_PATH = BASE / "clippulse.sqlite3"
+def load_session_secret():
+    configured = os.getenv("SESSION_SECRET")
+    if configured:
+        return configured
+    secret_file = BASE / "session_secret.key"
+    try:
+        if secret_file.exists():
+            value = secret_file.read_text().strip()
+            if value:
+                return value
+        value = secrets.token_urlsafe(48)
+        secret_file.write_text(value)
+        try:
+            secret_file.chmod(0o600)
+        except OSError:
+            pass
+        return value
+    except OSError:
+        return secrets.token_urlsafe(48)
+
 app = FastAPI(title="ClipPulse AI", version="0.2.0")
 app.add_middleware(
     SessionMiddleware,
-    secret_key=os.getenv("SESSION_SECRET") or secrets.token_urlsafe(48),
+    secret_key=load_session_secret(),
     same_site="lax",
     https_only=os.getenv("RENDER", "") == "true",
     max_age=60 * 60 * 24 * 7,
