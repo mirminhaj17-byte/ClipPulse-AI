@@ -29,6 +29,13 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <section class="hero"><div class="tag">CREATOR WORKSPACE · V1.1</div><h2>Turn long videos into short clips.</h2><p>Upload a recording or connect a public YouTube/Twitch livestream. Choose a moment, format it vertically, and export an MP4.</p></section>
 <section class="card"><h3>My clipping history</h3><div id="history" class="status">Loading your clips…</div></section>
 <section class="card">
+<h3>🎬 Clip a recorded YouTube video</h3>
+<p class="muted">Paste a public recorded YouTube video URL. ClipPulse imports it, then you can find highlights or cut exact timestamps. Maximum source size: 200 MB.</p>
+<label>YouTube video link</label><input id="youtubeUrl" type="url" placeholder="https://www.youtube.com/watch?v=...">
+<button id="youtubeButton" onclick="downloadYouTube()">Import YouTube video</button>
+<div id="youtubeStatus" class="status">No YouTube video imported yet.</div><div id="youtubeProgress"></div>
+</section>
+<section class="card">
 <h3>✨ Find my best moments</h3>
 <p class="muted">ClipPulse analyses audio activity and visual scene changes to suggest candidate moments. Scores are transparent heuristics, not a trained virality prediction.</p>
 <label>Suggested clip length</label>
@@ -68,6 +75,20 @@ async function checkAuth(){try{const d=await api("/api/me");document.getElementB
 async function logout(){location.reload()}
 async function loadHistory(){const box=document.getElementById("history");try{const d=await api("/api/history");if(!d.items.length){box.textContent="No clips yet. Your completed clips will appear here.";return}box.innerHTML=d.items.map(x=>'<div class="history-item"><div><strong>'+escapeHtml(x.source_name)+'</strong><div class="muted">'+escapeHtml(x.kind)+' · '+escapeHtml(x.created_at)+'</div></div><a href="'+x.url+'">Download</a></div>').join("")}catch(e){box.textContent=e.message}}
 function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]))}
+async function downloadYouTube(){
+ const url=document.getElementById("youtubeUrl").value.trim();
+ if(!url){alert("Paste a YouTube video link first.");return}
+ const btn=document.getElementById("youtubeButton"),status=document.getElementById("youtubeStatus");
+ btn.disabled=true;btn.textContent="Importing video…";status.textContent="Connecting to YouTube…";
+ showProgress("youtubeProgress","Importing YouTube video","Downloading a compatible video (up to 720p) to the free ClipPulse server. This may take a few minutes.","processing");
+ try{
+  const d=await api("/api/youtube/download",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});
+  videoId=d.video_id;
+  status.textContent="Video imported · "+(d.duration/60).toFixed(1)+" minutes · "+(d.size/1048576).toFixed(1)+" MB. You can now find highlights or create clips.";
+  showProgress("youtubeProgress","YouTube video ready","Your recorded video is available for clipping.","done",true);
+ }catch(e){status.textContent=e.message;showProgress("youtubeProgress","YouTube import failed",e.message,"done",true)}
+ finally{btn.disabled=false;btn.textContent="Import YouTube video"}
+}
 async function upload(){const f=document.getElementById("file").files[0];if(!f)return alert("Choose a video first.");const fd=new FormData();fd.append("file",f);const s=document.getElementById("uploadStatus");s.textContent="Uploading video…";showProgress("uploadProgress","Uploading "+f.name,"Sending video to your ClipPulse workspace. Keep this page open.","upload");try{const d=await new Promise((resolve,reject)=>{const x=new XMLHttpRequest();x.open("POST","/api/upload");x.upload.onprogress=e=>{if(e.lengthComputable){const pct=Math.round(e.loaded/e.total*100);const host=document.getElementById("uploadProgress");host.innerHTML='<div class="progress"><div class="progress-top"><strong>Uploading video</strong><span>'+pct+'%</span></div><div class="progress-track"><div class="progress-fill" style="width:'+pct+'%"></div></div><div class="progress-detail">'+(e.loaded/1048576).toFixed(1)+' MB of '+(e.total/1048576).toFixed(1)+' MB transferred</div></div>'}};x.onload=()=>{let data={};try{data=JSON.parse(x.responseText)}catch{};if(x.status>=200&&x.status<300)resolve(data);else reject(Error(data.detail||"Upload failed"))};x.onerror=()=>reject(Error("Network error during upload"));x.send(fd)});videoId=d.video_id;s.textContent="Upload complete: "+d.filename+" ("+(d.size/1048576).toFixed(1)+" MB)";showProgress("uploadProgress","Upload complete","Your video is ready for clipping and highlight analysis.","done",true)}catch(e){s.textContent=e.message;showProgress("uploadProgress","Upload failed",e.message,"done",true)}}
 async function findHighlights(){
  if(!videoId){alert("Upload a video first.");return}
