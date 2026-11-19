@@ -209,6 +209,65 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
                      (name, str(user["id"]), file.filename or name))
     return {"video_id": name, "filename": file.filename, "size": size}
 
+class YouTubeRequest(BaseModel):
+    url: str
+
+@app.post("/api/youtube/download")
+def download_youtube(req: YouTubeRequest, request: Request):
+    user = current_user(request)
+    from urllib.parse import urlparse
+    parsed = urlparse(req.url.strip())
+    host = (parsed.hostname or "").lower()
+    allowed = ("youtube.com", "youtu.be", "youtube-nocookie.com")
+    if parsed.scheme != "https" or not any(host == d or host.endswith("." + d) for d in allowed):
+        raise HTTPException(400, "Paste a valid HTTPS YouTube video link.")
+    if parsed.path.startswith("/live/"):
+        raise HTTPException(400, "This is a livestream URL. Please use a recorded YouTube video.")
+    if not clip_semaphore.acquire(blocking=False):
+        raise HTTPException(429, "Another video is being processed. Please wait and try again.")
+    work_id = uuid.uuid4().hex
+    template = str(UPLOADS / (work_id + ".%(ext)s"))
+    try:
+        try:
+            proc = subprocess.run(
+                ["yt-dlp", "--no-playlist", "--no-warnings", "--no-progress",
+                 "--max-filesize", "200M", "-f",
+                 "bv*[height<=720]+ba/b[height<=720]/b",
+                 "--merge-output-format", "mp4", "-o", template, req.url.strip()],
+                capture_output=True, text=True, timeout=600
+            )
+        except subprocess.TimeoutExpired:
+            raise HTTPException(408, "YouTube download took too long. Try a shorter video.")
+        if proc.returncode:
+            detail = (proc.stderr or proc.stdout or "YouTube download failed.")[-700:]
+            if "max-filesize" in detail.lower() or "file is larger" in detail.lower():
+                raise HTTPException(413, "This video exceeds the 200 MB free-server limit.")
+            raise HTTPException(422, "Could not download this YouTube video. It may be private, age-restricted, unavailable, or blocked by YouTube. " + detail)
+        candidates = [p for p in UPLOADS.glob(work_id + ".*") if p.is_file()]
+        if not candidates:
+            raise HTTPException(422, "YouTube did not produce a video file.")
+        source = max(candidates, key=lambda p: p.stat().st_size)
+        if source.stat().st_size > MAX_UPLOAD_BYTES:
+            source.unlink(missing_ok=True)
+            raise HTTPException(413, "This video exceeds the 200 MB free-server limit.")
+        probe = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration",
+                                "-of", "default=noprint_wrappers=1:nokey=1", str(source)],
+                               capture_output=True, text=True, timeout=30)
+        if probe.returncode:
+            source.unlink(missing_ok=True)
+            raise HTTPException(422, "Downloaded file could not be verified as a playable video.")
+        source_name = "YouTube video"
+        with db() as conn:
+            conn.execute("""CREATE TABLE IF NOT EXISTS uploads (
+                video_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, source_name TEXT NOT NULL
+            )""")
+            conn.execute("INSERT INTO uploads(video_id,user_id,source_name) VALUES(?,?,?)",
+                         (source.name, str(user["id"]), source_name))
+        return {"video_id": source.name, "filename": source.name,
+                "size": source.stat().st_size, "duration": float(probe.stdout.strip() or 0)}
+    finally:
+        clip_semaphore.release()
+
 @app.post("/api/auto-highlights")
 def auto_highlights(request: Request, video_id: str, clip_seconds: int = 30):
     user = current_user(request)
