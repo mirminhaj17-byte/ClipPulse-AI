@@ -32,7 +32,7 @@ footer{color:#657184;text-align:center;padding:30px;font-size:12px}
 <h3>✨ Find my best moments</h3>
 <p class="muted">ClipPulse analyses audio activity and visual scene changes to suggest candidate moments. Scores are transparent heuristics, not a trained virality prediction.</p>
 <label>Suggested clip length</label>
-<select id="autoLength"><option value="20">20 seconds</option><option value="20" selected>20 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select>
+<select id="autoLength"><option value="20" selected>20 seconds</option><option value="45">45 seconds</option><option value="60">60 seconds</option></select>
 <button id="findHighlights" onclick="findHighlights()">Find best moments automatically</button>
 <div id="highlightStatus" class="status">Upload a video first to discover candidate highlights.</div><div id="highlightProgress"></div>
 <div id="highlightResults"></div>
@@ -77,13 +77,13 @@ async function findHighlights(){
   const seconds=Number(document.getElementById("autoLength").value);
   const d=await api("/api/auto-highlights?video_id="+encodeURIComponent(videoId)+"&clip_seconds="+seconds,{method:"POST"});
   suggestions=d.items||[];
-  status.textContent="Found "+suggestions.length+" candidate moments in a "+Math.round(d.video_duration/60)+" minute video. Scores combine audio activity and detected visual changes; review clips before publishing.";showProgress("highlightProgress","Analysis complete","Found "+suggestions.length+" candidate moments. Choose Make clip to render one.","done",true);
+  status.textContent="Found "+suggestions.length+" candidate moments in a "+formatVideoDuration(d.video_duration)+" video. Scores combine audio activity and detected visual changes; review clips before publishing.";showProgress("highlightProgress","Analysis complete","Found "+suggestions.length+" candidate moments. Choose Make clip to render one.","done",true);
   if(!suggestions.length){results.innerHTML='<p class="muted">No strong audio-activity or visual scene-change moments were detected. You can still create a manual clip below.</p>';return}
   results.innerHTML=suggestions.map((x,i)=>'<div class="history-item"><div><strong>Candidate '+(i+1)+' · '+x.score+'/100</strong><div class="muted">'+formatTime(x.start)+' · '+Math.round(x.duration)+' sec · '+escapeHtml(x.reason)+'</div></div><button style="width:auto;margin:0" onclick="createSuggestedClip('+i+')">Make clip</button></div>').join("");
  }catch(e){status.textContent=e.message}
  finally{btn.disabled=false;btn.textContent="Find best moments automatically"}
 }
-function formatTime(seconds){const n=Math.max(0,Math.floor(seconds));return Math.floor(n/60)+":"+String(n%60).padStart(2,"0")}
+function formatTime(seconds){const n=Math.max(0,Math.floor(seconds));return Math.floor(n/60)+":"+String(n%60).padStart(2,"0")}\nfunction formatVideoDuration(seconds){const n=Math.max(0,Math.round(Number(seconds)||0));if(n<60)return n+" seconds";const m=Math.floor(n/60),s=n%60;return s?m+" min "+s+" sec":m+" minutes"}
 async function createSuggestedClip(index){
  const x=suggestions[index];if(!x||!videoId)return;
  const status=document.getElementById("highlightStatus");status.textContent="Creating selected clip…";showProgress("highlightProgress","Rendering selected highlight","Encoding video, applying the selected aspect ratio and preparing the MP4. The server does not yet expose exact FFmpeg percentage.","processing");
