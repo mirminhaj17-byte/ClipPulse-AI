@@ -83,7 +83,8 @@ async function findHighlights(){
  }catch(e){status.textContent=e.message}
  finally{btn.disabled=false;btn.textContent="Find best moments automatically"}
 }
-function formatTime(seconds){const n=Math.max(0,Math.floor(seconds));return Math.floor(n/60)+":"+String(n%60).padStart(2,"0")}\nfunction formatVideoDuration(seconds){const n=Math.max(0,Math.round(Number(seconds)||0));if(n<60)return n+" seconds";const m=Math.floor(n/60),s=n%60;return s?m+" min "+s+" sec":m+" minutes"}
+function formatTime(seconds){const n=Math.max(0,Math.floor(seconds));return Math.floor(n/60)+":"+String(n%60).padStart(2,"0")}
+function formatVideoDuration(seconds){const n=Math.max(0,Math.round(Number(seconds)||0));if(n<60)return n+" seconds";const m=Math.floor(n/60),s=n%60;return s?m+" min "+s+" sec":m+" minutes"}
 async function createSuggestedClip(index){
  const x=suggestions[index];if(!x||!videoId)return;
  const status=document.getElementById("highlightStatus");status.textContent="Creating selected clip…";showProgress("highlightProgress","Rendering selected highlight","Encoding video, applying the selected aspect ratio and preparing the MP4. The server does not yet expose exact FFmpeg percentage.","processing");
