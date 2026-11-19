@@ -291,7 +291,7 @@ class LiveRequest(BaseModel):
 def start_live(req: LiveRequest, request: Request):
     current_user(request)
     url = safe_stream_url(req.url)
-    job_id = uuid.uuid4().hex[:10]
+    job_id = uuid.uuid4().hex  # 128-bit bearer ID; remains valid if the guest cookie rotates
     target = LIVE / f"{job_id}.ts"
     try:
         handle = target.open("wb")
@@ -321,8 +321,25 @@ def live_status(live_id: str, request: Request):
     user = current_user(request)
     with lock:
         job = live_jobs.get(live_id)
-    if not job or job.get("user_id") != str(user["id"]):
-        return {"recording": False, "reason": "The free server restarted or the capture ended. Start a new capture."}
+    # Render restarts clear the in-memory process registry. Resume from the
+    # persisted source URL; live_id is a cryptographically random bearer token.
+    if not job:
+        with db() as conn:
+            saved = conn.execute("SELECT url FROM live_sessions WHERE live_id=?", (live_id,)).fetchone()
+        if saved:
+            recovered_path = LIVE / f"{live_id}.ts"
+            try:
+                handle = recovered_path.open("wb")
+                proc = subprocess.Popen(["streamlink", "--stdout", saved["url"], "best"],
+                                         stdout=handle, stderr=subprocess.DEVNULL)
+                job = {"proc": proc, "handle": handle, "path": recovered_path,
+                       "started": time.time(), "url": saved["url"], "user_id": str(user["id"])}
+                with lock:
+                    live_jobs[live_id] = job
+            except OSError:
+                return {"recording": False, "reason": "Could not resume the stream. Start a new capture."}
+        else:
+            return {"recording": False, "reason": "The capture record is no longer available. Start a new capture."}
     proc = job["proc"]
     alive = proc.poll() is None
     size = job["path"].stat().st_size if job["path"].exists() else 0
@@ -342,8 +359,8 @@ def clip_live(req: LiveClipRequest, request: Request):
                 live_id TEXT PRIMARY KEY, user_id TEXT NOT NULL, url TEXT NOT NULL,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )""")
-            saved = conn.execute("SELECT url FROM live_sessions WHERE live_id=? AND user_id=?",
-                                 (req.live_id, str(user["id"]))).fetchone()
+            saved = conn.execute("SELECT url FROM live_sessions WHERE live_id=?",
+                                 (req.live_id,)).fetchone()
         if not saved:
             raise HTTPException(404, "Live session expired. Start a new capture.")
         recovered_path = LIVE / f"{req.live_id}.ts"
@@ -358,8 +375,6 @@ def clip_live(req: LiveClipRequest, request: Request):
         with lock:
             live_jobs[req.live_id] = job
         raise HTTPException(409, "The server restarted and live capture has been automatically resumed. Keep this page open and wait at least 70 seconds before clipping.")
-    if job.get("user_id") != str(user["id"]):
-        raise HTTPException(404, "Live recording not found.")
     if not 1 <= req.duration <= 120 or not req.duration <= req.seconds_ago <= 3600:
         raise HTTPException(400, "Clip length must be 1–120 seconds, and the clip must end at least its own length ago.")
     if req.aspect not in ("9:16", "16:9", "1:1"):
@@ -437,7 +452,7 @@ def stop_live(live_id: str, request: Request):
     user = current_user(request)
     with lock:
         job = live_jobs.get(live_id)
-        if not job or job.get("user_id") != str(user["id"]):
+        if not job:
             raise HTTPException(404, "Live recording not found.")
         live_jobs.pop(live_id, None)
     job["proc"].terminate()
