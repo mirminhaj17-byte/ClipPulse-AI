@@ -198,7 +198,7 @@ async def upload_video(request: Request, file: UploadFile = File(...)):
             size += len(chunk)
             if size > MAX_UPLOAD_BYTES:
                 dest.unlink(missing_ok=True)
-                raise HTTPException(413, "Maximum upload size is 550 MB on the free instance.")
+                raise HTTPException(413, "Maximum upload size is 200 MB on the free instance.")
             out.write(chunk)
     # Keep ownership of the source upload in a separate temporary table.
     with db() as conn:
